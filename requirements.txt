@@ -1,0 +1,26 @@
+# Core
+numpy>=1.26
+pandas>=2.2
+tqdm>=4.66
+scikit-learn>=1.4
+
+# Tokenization
+tokenizers>=0.19        # Hugging Face BPE
+epitran>=1.25           # G2P (grapheme-to-phoneme), simpler cross-lingual option
+# panphon is a dependency of epitran but pin it explicitly to avoid resolver issues
+panphon>=0.20
+
+# Modeling (nanoGPT-style training)
+torch>=2.2
+transformers>=4.40
+
+# Data handling
+datasets>=2.19           # HuggingFace datasets, for pulling corpora
+regex>=2024.4.16         # Unicode-aware regex, useful for Devanagari + Latin mixed text
+
+# Notebooks / exploration
+jupyter>=1.0
+matplotlib>=3.8
+
+# Dev
+pytest>=8.0
