@@ -23,6 +23,10 @@ model/checkpoints/
 *.ckpt
 results/plots/*.png
 
+# Trained tokenizer artifacts (regenerable from scripts + data, not source)
+baselines/bpe_model/
+tokenizer/phonetic_model/
+
 # OS / editor
 .DS_Store
 Thumbs.db
