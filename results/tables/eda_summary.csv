@@ -1,0 +1,9 @@
+metric,value
+sentence_count,1000
+avg_words_per_sentence,11.03
+min_words_per_sentence,2
+max_words_per_sentence,48
+avg_chars_per_sentence,55.61
+unique_word_vocab_size,2985
+pct_sentences_with_devanagari,0.0
+pct_sentences_likely_code_mixed_heuristic,73.4
