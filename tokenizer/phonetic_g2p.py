@@ -1,164 +1,110 @@
-"""
-Phonetic tokenizer for romanized Hinglish text.
+"""Phonetic tokenizer for Hinglish using rule-based phoneme conversion + BPE merging."""
 
-DESIGN NOTE (important, document this in your paper's Method/Limitations):
-Standard G2P tools (Epitran's hin-Deva, Festvox Indic) expect Devanagari
-script input and convert it to phonemes. Our corpus (PHINC) is romanized
-Hinglish -- Latin script, code-mixed, noisy social-media text. Those tools
-can't be applied directly without a transliteration step first.
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer
+import re
 
-Instead, this module implements a lightweight RULE-BASED phonetic
-normalizer that operates directly on the Latin spelling: it maps common
-digraphs/trigraphs used in Hindi romanization (aa, ee, oo, bh, ch, dh, gh,
-jh, kh, ph, sh, th, ng) to single phoneme symbols, then falls back to
-single-character mapping for anything else. This is NOT linguistically
-rigorous G2P -- it's an approximation chosen to match the actual text
-(romanized, code-mixed, noisy) rather than force a Devanagari-based tool
-onto data it can't read.
-
-Known limitation: this does not solve schwa deletion (e.g. "kamal" should
-phonetically drop the final inherent vowel in real Hindi pronunciation --
-this rule set does not model that). Note this explicitly as a limitation,
-per your professor's guidance -- pick one approach, document what it
-doesn't handle, don't over-engineer in Phase 1.
-
-Usage:
-    python tokenizer/phonetic_g2p.py train                    # build vocab, save
-    python tokenizer/phonetic_g2p.py encode "some sentence"   # quick test
-"""
-
-import json
-import sys
-from pathlib import Path
-
-TRAIN_PATH = Path("data/processed/train.txt")
-MODEL_DIR = Path("tokenizer/phonetic_model")
-VOCAB_PATH = MODEL_DIR / "vocab.json"
-
-# Longest-match-first digraph/trigraph -> phoneme symbol.
-# Symbols are plain ASCII tags (not IPA) to keep files simple to inspect/diff.
-MULTI_CHAR_RULES = [
-    # trigraphs first
-    ("chh", "CHH"),
-    # digraphs (aspirated consonants -- common in Hindi romanization)
-    ("bh", "BH"), ("ch", "CH"), ("dh", "DH"), ("gh", "GH"),
-    ("jh", "JH"), ("kh", "KH"), ("ph", "PH"), ("sh", "SH"),
-    ("th", "TH"), ("ng", "NG"), ("ny", "NY"),
-    # long vowels
-    ("aa", "AA"), ("ee", "EE"), ("ii", "EE"), ("oo", "OO"),
-    ("ai", "AI"), ("au", "AU"),
-]
-
-# Single-character fallback for anything not caught by a digraph rule.
-SINGLE_CHAR_RULES = {
-    "a": "A", "e": "E", "i": "I", "o": "O", "u": "U",
-    "b": "B", "c": "K", "d": "D", "f": "F", "g": "G",
-    "h": "H", "j": "J", "k": "K", "l": "L", "m": "M",
-    "n": "N", "p": "P", "q": "K", "r": "R", "s": "S",
-    "t": "T", "v": "V", "w": "W", "x": "KS", "y": "Y", "z": "Z",
-}
-
-WORD_BOUNDARY = "<WB>"
-
-
-def word_to_phonemes(word: str) -> list:
-    """Convert a single lowercase word into a list of phoneme-symbol tokens."""
-    word = word.lower()
-    phonemes = []
-    i = 0
-    while i < len(word):
-        matched = False
-        for pattern, symbol in MULTI_CHAR_RULES:
-            if word.startswith(pattern, i):
-                phonemes.append(symbol)
-                i += len(pattern)
-                matched = True
-                break
-        if not matched:
-            ch = word[i]
-            if ch in SINGLE_CHAR_RULES:
-                phonemes.append(SINGLE_CHAR_RULES[ch])
-            # else: skip punctuation/digits/symbols/non-Latin chars silently
-            i += 1
-    return phonemes
-
-
-def sentence_to_phonemes(sentence: str) -> list:
-    """Convert a sentence into a flat phoneme-token list with word boundaries."""
-    words = sentence.strip().split()
-    tokens = []
-    for idx, w in enumerate(words):
-        tokens.extend(word_to_phonemes(w))
-        if idx != len(words) - 1:
-            tokens.append(WORD_BOUNDARY)
-    return tokens
-
-
-def build_vocab():
-    if not TRAIN_PATH.exists():
-        print(f"ERROR: {TRAIN_PATH} not found. Run data/preprocess.py first.")
-        sys.exit(1)
-
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-    vocab = set()
-    total_tokens = 0
-    total_sentences = 0
-
-    with open(TRAIN_PATH, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+class PhoneticTokenizer:
+    """Rule-based phonetic tokenizer for romanized Hinglish."""
+    
+    def __init__(self):
+        self.phoneme_to_id = {}
+        self.id_to_phoneme = {}
+        self.vocab_built = False
+    
+    def text_to_phonemes(self, text):
+        """Convert romanized Hinglish text to phoneme sequence (rule-based)."""
+        text = text.lower().strip()
+        phonemes = []
+        i = 0
+        while i < len(text):
+            if text[i].isspace():
+                i += 1
                 continue
-            tokens = sentence_to_phonemes(line)
-            vocab.update(tokens)
-            total_tokens += len(tokens)
-            total_sentences += 1
+            if i + 1 < len(text):
+                digraph = text[i:i+2]
+                if digraph in ['ch', 'sh', 'th', 'ph', 'kh', 'gh', 'dh', 'bh', 'ng']:
+                    phonemes.append(digraph)
+                    i += 2
+                    continue
+            phonemes.append(text[i])
+            i += 1
+        return phonemes
+    
+    def build_vocab(self, corpus_path, min_freq=1):
+        """Build phoneme vocabulary from corpus."""
+        from collections import Counter
+        phoneme_counts = Counter()
+        
+        with open(corpus_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                phonemes = self.text_to_phonemes(line.strip())
+                phoneme_counts.update(phonemes)
+        
+        special_tokens = ['<PAD>', '<UNK>', '<BOS>', '<EOS>']
+        idx = 0
+        for token in special_tokens:
+            self.phoneme_to_id[token] = idx
+            self.id_to_phoneme[idx] = token
+            idx += 1
+        
+        for phoneme, count in phoneme_counts.most_common():
+            if count >= min_freq and phoneme not in self.phoneme_to_id:
+                self.phoneme_to_id[phoneme] = idx
+                self.id_to_phoneme[idx] = phoneme
+                idx += 1
+        
+        self.vocab_built = True
+        print(f"Built phonetic vocab: {len(self.phoneme_to_id)} tokens")
+    
+    def encode(self, text):
+        """Text -> phoneme IDs."""
+        phonemes = self.text_to_phonemes(text)
+        return [self.phoneme_to_id.get(p, self.phoneme_to_id.get('<UNK>', 1)) for p in phonemes]
+    
+    def vocab_size(self):
+        return len(self.phoneme_to_id)
 
-    vocab.add(WORD_BOUNDARY)
-    sorted_vocab = sorted(vocab)
-    id_map = {sym: i for i, sym in enumerate(sorted_vocab)}
 
-    with open(VOCAB_PATH, "w", encoding="utf-8") as f:
-        json.dump(id_map, f, ensure_ascii=False, indent=2)
+def build_phonetic_bpe(corpus_path, vocab_size=2000):
+    """
+    Convert text → phonemes → apply BPE merging to reach target vocab size.
+    This creates a phonetic tokenizer expanded to match BPE's vocab size.
+    """
+    # Step 1: Convert entire corpus to phoneme sequences
+    phoneme_sequences = []
+    phonetic = PhoneticTokenizer()
+    
+    with open(corpus_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            phonemes = phonetic.text_to_phonemes(line.strip())
+            if phonemes:  # Only add non-empty sequences
+                phoneme_sequences.append(' '.join(phonemes))
+    
+    # Step 2: Save phoneme sequences to temp file
+    temp_file = 'temp_phonemes.txt'
+    with open(temp_file, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(phoneme_sequences))
+    
+    # Step 3: Train BPE on phoneme sequences
+    tokenizer = Tokenizer(BPE())
+    trainer = BpeTrainer(
+        vocab_size=vocab_size,
+        special_tokens=['<PAD>', '<UNK>', '<BOS>', '<EOS>']
+    )
+    tokenizer.train([temp_file], trainer)
+    
+    print(f"Built phonetic-BPE tokenizer: vocab_size={tokenizer.get_vocab_size()}")
+    return tokenizer
 
-    print(f"Sentences processed: {total_sentences}")
-    print(f"Total phoneme tokens: {total_tokens}")
-    print(f"Avg tokens/sentence: {total_tokens / total_sentences:.2f}")
-    print(f"Vocab size: {len(id_map)}")
-    print(f"Saved vocab to {VOCAB_PATH}")
 
-
-def encode(sentence: str):
-    if not VOCAB_PATH.exists():
-        print("ERROR: no vocab found. Run 'python tokenizer/phonetic_g2p.py train' first.")
-        sys.exit(1)
-
-    with open(VOCAB_PATH, encoding="utf-8") as f:
-        id_map = json.load(f)
-
-    tokens = sentence_to_phonemes(sentence)
-    ids = [id_map.get(t, -1) for t in tokens]  # -1 = unseen phoneme (OOV)
-
-    print(f"Input:  {sentence}")
-    print(f"Tokens: {tokens}")
-    print(f"IDs:    {ids}")
-    print(f"Token count: {len(tokens)}")
-    if -1 in ids:
-        print("NOTE: -1 marks phoneme symbols not seen during vocab training.")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("train", "encode"):
-        print("Usage:")
-        print("  python tokenizer/phonetic_g2p.py train")
-        print("  python tokenizer/phonetic_g2p.py encode \"some sentence\"")
-        sys.exit(1)
-
-    if sys.argv[1] == "train":
-        build_vocab()
-    elif sys.argv[1] == "encode":
-        if len(sys.argv) < 3:
-            print("Usage: python tokenizer/phonetic_g2p.py encode \"some sentence\"")
-            sys.exit(1)
-        encode(sys.argv[2])
+if __name__ == '__main__':
+    # Test basic phonetic
+    phon = PhoneticTokenizer()
+    phon.build_vocab('data/processed/train.txt')
+    
+    # Test phonetic-BPE expansion
+    phon_bpe = build_phonetic_bpe('data/processed/train.txt', vocab_size=2000)
+    print(f"Phonetic vocab: {phon.vocab_size()}")
+    print(f"Phonetic-BPE vocab: {phon_bpe.get_vocab_size()}")
