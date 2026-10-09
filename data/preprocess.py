@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-IIITH_PATH = Path("data/raw/s-enhi.txt")
+IIITH_PATH = Path("data/raw/hinglish_corpus.txt")
 PHINC_PATH = Path("data/raw/phinc.csv")
 OUT_PATH = Path("data/processed/train.txt")
 TARGET_SENTENCES = 1000

@@ -1,0 +1,17 @@
+model:
+  vocab_size: 2000
+  max_seq_length: 256
+  n_layers: 4
+  n_heads: 4
+  n_embed: 128
+  dropout: 0.1
+
+training:
+  learning_rate: 3e-4
+  batch_size: 32
+  num_epochs: 5
+  device: cuda
+
+data:
+  corpus_path: data/processed/train.txt
+  max_samples: null
