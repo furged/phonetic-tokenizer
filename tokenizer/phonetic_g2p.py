@@ -5,6 +5,14 @@ from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 import re
 
+from phonemizer import phonemize
+
+def espeak_phonemes(word):
+    """Latin Hinglish word -> list of IPA phoneme symbols via eSpeak."""
+    out = phonemize(word, language='hi', backend='espeak', strip=True)
+    out = re.sub(r'\((en|hi)\)', '', out).strip()
+    return list(out.replace(' ', ''))
+
 class PhoneticTokenizer:
     """Rule-based phonetic tokenizer for romanized Hinglish."""
     
@@ -13,8 +21,8 @@ class PhoneticTokenizer:
         self.id_to_phoneme = {}
         self.vocab_built = False
     
-    def text_to_phonemes(self, text):
-        """Convert romanized Hinglish text to phoneme sequence (rule-based)."""
+    def text_to_phonemes_rules(self, text):
+        """OLD baseline: hand-written digraph rules (kept for comparison)."""
         text = text.lower().strip()
         phonemes = []
         i = 0
@@ -22,14 +30,19 @@ class PhoneticTokenizer:
             if text[i].isspace():
                 i += 1
                 continue
-            if i + 1 < len(text):
-                digraph = text[i:i+2]
-                if digraph in ['ch', 'sh', 'th', 'ph', 'kh', 'gh', 'dh', 'bh', 'ng']:
-                    phonemes.append(digraph)
-                    i += 2
-                    continue
+            if i + 1 < len(text) and text[i:i+2] in ['ch', 'sh', 'th', 'ph', 'kh', 'gh', 'dh', 'bh', 'ng']:
+                phonemes.append(text[i:i+2])
+                i += 2
+                continue
             phonemes.append(text[i])
             i += 1
+        return phonemes
+
+    def text_to_phonemes(self, text):
+        """Hinglish text -> phoneme list using eSpeak (Hindi). This is the main method."""
+        phonemes = []
+        for word in text.lower().split():
+            phonemes.extend(espeak_phonemes(word))
         return phonemes
     
     def build_vocab(self, corpus_path, min_freq=1):
