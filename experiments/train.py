@@ -29,13 +29,9 @@ class HinglishDataset(Dataset):
         # Tokenize all sentences
         self.token_ids = []
         for sent in sentences:
-            if hasattr(tokenizer, 'encode'):
-                # BPE tokenizer
-                ids = tokenizer.encode(sent)
-            else:
-                # Phonetic tokenizer (huggingface)
-                encoding = tokenizer.encode(sent)
-                ids = encoding.ids
+            encoded = tokenizer.encode(sent)
+            # Our BPETokenizer returns a list of ids; the HF phonetic tokenizer returns an Encoding object
+            ids = encoded if isinstance(encoded, list) else encoded.ids
             
             self.token_ids.extend(ids)
         
@@ -81,7 +77,7 @@ def train_model(tokenizer_name, corpus_path='data/processed/train.txt'):
     
     # Create dataset and dataloader
     print("Creating dataset...")
-    dataset = HinglishDataset(corpus_path, tokenizer, max_seq_length=config.max_seq_length)
+    dataset = HinglishDataset(corpus_path, tokenizer, max_seq_length=config.max_seq_length, max_samples=100)    
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
     print(f"Dataset size: {len(dataset)} sequences\n")
     

@@ -24,3 +24,10 @@ matplotlib>=3.8
 
 # Dev
 pytest>=8.0
+
+torch>=2.0
+numpy>=1.24
+transformers>=4.30
+pyyaml>=6.0
+pandas>=1.5
+epitran>=1.17
