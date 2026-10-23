@@ -1,12 +1,13 @@
 """Phonetic tokenizer for Hinglish using rule-based phoneme conversion + BPE merging."""
 
+from functools import lru_cache
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
 import re
 
 from phonemizer import phonemize
-
+@lru_cache(maxsize=None)
 def espeak_phonemes(word):
     """Latin Hinglish word -> list of IPA phoneme symbols via eSpeak."""
     out = phonemize(word, language='hi', backend='espeak', strip=True)
@@ -79,7 +80,20 @@ class PhoneticTokenizer:
     def vocab_size(self):
         return len(self.phoneme_to_id)
 
+class PhoneticBPE:
+    """Text -> eSpeak phonemes -> BPE ids. Same preprocessing at train and test time."""
 
+    def __init__(self, tok, phon):
+        self.tok = tok
+        self.phon = phon
+
+    def encode(self, text):
+        phonemes = self.phon.text_to_phonemes(text)
+        return self.tok.encode(' '.join(phonemes)).ids
+
+    def get_vocab_size(self):
+        return self.tok.get_vocab_size()
+    
 def build_phonetic_bpe(corpus_path, vocab_size=2000):
     """
     Convert text → phonemes → apply BPE merging to reach target vocab size.
@@ -109,7 +123,7 @@ def build_phonetic_bpe(corpus_path, vocab_size=2000):
     tokenizer.train([temp_file], trainer)
     
     print(f"Built phonetic-BPE tokenizer: vocab_size={tokenizer.get_vocab_size()}")
-    return tokenizer
+    return PhoneticBPE(tokenizer, phonetic)
 
 
 if __name__ == '__main__':
