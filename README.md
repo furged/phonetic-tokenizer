@@ -1,143 +1,191 @@
-```markdown
-# Sound Over Spelling: Phonetic vs. Subword Tokenization for Hindi/Hinglish Language Modeling
+# Sound Over Spelling
 
-Comparative study testing whether phonetic (sound-based) tokenization is more robust to spelling variation than standard BPE (spelling-based) tokenization, using Hinglish as a stress test for inconsistent spelling.
+Phonetic vs. Subword Tokenization for Hindi/Hinglish Language Modeling
 
-**Research question:** Does phonetic tokenization make language models more robust to spelling variation than BPE, when trained at matched scale?
+Does turning Hinglish into sounds make a language model more robust to spelling variation than standard subword tokenization?
 
-## Hypothesis
 
-Phonetic tokenization maps spelling variants of the same word (e.g. `acha`, `accha`, `achha`) to the same or similar token sequences more often than BPE does, so models trained on it should degrade less under spelling noise, even though phonetic sequences are longer.
 
-## Status
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 
-| Phase | Component | Status |
-|---|---|---|
-| 0 | Environment, repo, dependencies | Done |
-| 1 | Phonetic tokenizer (eSpeak G2P via Phonemizer) + BPE baseline | Done |
-| 1 | Tokenizer stats (vocab size, tokens/sentence) | Done (preliminary, on 1000 sentences) |
-| 1 | Collision rate script | Done, preliminary result (BPE 0/114, phonetic 19/114) |
-| 2 | Training data: L3Cube-HingCorpus subset (50k, seed 42) | Done |
-| 2 | nanoGPT training with BPC metric, resumable | Smoke test done; full run pending |
-| 3 | Spelling groups (transliteration-based) | Pending: regrouped file from teammate |
-| 3 | Robustness test (clean vs perturbed) | Not started |
-| 3 | Sentiment fine-tuning (cleaned sentiment data) | Not started, data cleaning in progress |
-| 4 | Paper | Drafting |
 
-## Repository Layout
 
-```
 
-baselines/     BPE tokenizer baseline (Hugging Face tokenizers)
-data/
-  prepare_subset.py   Reservoir-samples a fixed 50k subset from the L3Cube archive
-  preprocess.py       Original cleaning script (older, 1000-sentence path)
-  raw/                Raw inputs (ignored by git): archive, spelling groups, sentiment files
-  processed/          Derived splits (ignored by git)
-experiments/
-  tokenizer_stats.py  Vocab size and tokens/sentence for both tokenizers
-  collision_rate.py   Do spelling variants of the same word get the same tokens?
-  train.py            nanoGPT training with BPC, checkpoint resume, per-tokenizer runs
-  eda.py              Exploratory data analysis
-model/
-  nanogpt.py          Small GPT (4 layers, 4 heads, 128 dim, ~1.3M parameters)
-tokenizer/
-  phonetic_g2p.py     eSpeak G2P (via Phonemizer), phonetic BPE wrapper
-results/              Tables, checkpoints, saved tokenizers (ignored by git: *.pt, tokenizer files)
+![PyTorch](https://img.shields.io/badge/PyTorch-nanoGPT-orange)
 
-```
+
+
+
+![Status](https://img.shields.io/badge/Status-Training%20in%20progress-yellow)
+
+
+
+
+![Data](https://img.shields.io/badge/Data-L3Cube--HingCorpus-green)
+
+
+
+---
+
+## The Idea
+
+Hinglish has no fixed spelling. The same word is written many ways:
+
+    acha   accha   achha   achcha   ->  "good"
+    kuch   kuchh                    ->  "something"
+
+BPE splits text by spelling, so each variant becomes a different token sequence. The model has to learn each spelling separately.
+
+Hypothesis: tokenizing by sound (eSpeak phonemes) should make spelling variants collapse into the same or similar sequences, so the model should degrade less under misspelled input, even though sound sequences are longer.
+
+    spelling -> BPE        -> [acha] [accha] [achha]     three different sequences
+    sound    -> phonetic   -> a t S a / a t S h a        near-identical
+
+---
+
+## Results So Far
+
+| Measure | BPE | Phonetic-BPE | Notes |
+|---|---|---|---|
+| Vocab size | 2000 | 2000 | Matched target |
+| Avg tokens per sentence | 33.97 | 100.36 | Preliminary, 1000 sentences |
+| Collision rate (spelling groups) | 0 / 114 | 19 / 114 | Preliminary, groups not yet verified |
+| Bits per character (smoke test) | 3.70 | 3.19 | 1 epoch, 100 sentences. Pipeline check only, not a result |
+
+The full bits-per-character comparison runs after the full training. The smoke-test numbers only confirm that the pipeline works.
+
+---
+
+## Pipeline
+
+    L3Cube-HingCorpus
+        -> 50k seeded sample (seed 42)
+        -> 90/10 train/test split (seed 42)
+        -> BPE tokenizer        (spelling)
+        -> Phonetic tokenizer   (text -> eSpeak IPA -> BPE)
+        -> nanoGPT, identical config for both
+        -> bits per character on the same held-out text
+
+Bits per character is used because perplexity is measured per token. The two tokenizers cut text into different-sized pieces, so their perplexities cannot be compared. BPC divides total loss by raw characters of the same test text.
+
+---
 
 ## Setup
 
-```bash
-git clone https://github.com/furged/phonetic-tokenizer.git
-cd phonetic-tokenizer
-pip install -r requirements.txt datasets
-```
+    git clone https://github.com/furged/phonetic-tokenizer.git
+    cd phonetic-tokenizer
+    pip install -r requirements.txt datasets
 
-**eSpeak NG is required** for the phonetic tokenizer. Install it from the eSpeak NG GitHub releases, then set:
+eSpeak NG is required for the phonetic path. Install it, then set these as user environment variables (Windows):
 
-```bash
-export PHONEMIZER_ESPEAK_LIBRARY="C:/Program Files/eSpeak NG/libespeak-ng.dll"
-export PHONEMIZER_ESPEAK_PATH="C:/Program Files/eSpeak NG/espeak-ng.exe"
-```
+    PHONEMIZER_ESPEAK_LIBRARY = C:\Program Files\eSpeak NG\libespeak-ng.dll
+    PHONEMIZER_ESPEAK_PATH    = C:\Program Files\eSpeak NG\espeak-ng.exe
 
-(On Windows, set these as user environment variables so they persist.)
+Set a Hugging Face token so the 2.49 GB archive downloads quickly:
 
-**Hugging Face token** (needed to download the L3Cube archive quickly):
+    export HF_TOKEN=your_token_here
 
-```bash
-export HF_TOKEN=your_token_here
-```
+---
 
-## Reproducing the Pipeline
+## Reproduce
 
 Run from the repo root, in this order.
 
-1. **Build the training subset** (downloads the 2.49 GB archive once, about 40 minutes on a typical connection):
-   ```bash
-   python data/prepare_subset.py
-   ```
-   Writes 50,000 sentences to `data/processed/train.txt`, with seed 42.
+| Step | Command | Output |
+|---|---|---|
+| 1. Build subset | `python data/prepare_subset.py` | `data/processed/train.txt` (50,000 lines) |
+| 2. Tokenizer stats | `python experiments/tokenizer_stats.py` | `results/tables/tokenizer_stats.csv` |
+| 3. Collision rate | `python experiments/collision_rate.py` | `results/tables/collision_rate.csv` |
+| 4. Train BPE | `python experiments/train.py bpe` | checkpoints and a BPC row |
+| 5. Train phonetic | `python experiments/train.py phonetic` | checkpoints and a BPC row |
 
-2. **Tokenizer stats** (Phase 1 numbers):
-   ```bash
-   python experiments/tokenizer_stats.py
-   ```
+Pausing: press Ctrl+C. Progress is saved at the end of each epoch, so rerunning the same command resumes from the last completed epoch. Copy `results/` to move between machines.
 
-3. **Collision rate** (needs `data/raw/spelling_variants.csv` in the target format: `hindi, variant_1 ... variant_n, source`):
-   ```bash
-   python experiments/collision_rate.py
-   ```
+---
 
-4. **Train the language models** (resumable, run one at a time):
-   ```bash
-   python experiments/train.py bpe
-   python experiments/train.py phonetic
-   ```
-   Pausing with Ctrl+C loses only the current epoch. Rerunning resumes from the last completed epoch. Results go to `results/tables/bpc.csv`.
+## Repository Map
 
-## Metrics
+    phonetic-tokenizer/
+    ├── data/
+    │   ├── prepare_subset.py    seeded 50k subset from the archive
+    │   ├── raw/                 inputs (git-ignored)
+    │   └── processed/           derived splits (git-ignored)
+    ├── tokenizer/
+    │   └── phonetic_g2p.py      eSpeak G2P and phonetic BPE wrapper
+    ├── baselines/
+    │   └── bpe_tokenizer.py     BPE baseline
+    ├── model/
+    │   └── nanogpt.py           small GPT, about 1.3M parameters
+    ├── experiments/
+    │   ├── tokenizer_stats.py   vocab size and tokens per sentence
+    │   ├── collision_rate.py    do spelling variants collide?
+    │   ├── train.py             training, BPC, resumable checkpoints
+    │   └── eda.py               exploratory analysis
+    └── results/                 tables, checkpoints, saved tokenizers
 
-- **Bits per character (BPC):** total test loss in bits, divided by the number of raw characters in the test text. Both tokenizers are scored on the same characters, so BPC is comparable across tokenizers. Replaces perplexity, which is not comparable when token sizes differ.
-- **Collision rate:** share of spelling-variant groups whose variants all produce identical token sequences.
+---
+
+## Model
+
+| Setting | Value |
+|---|---|
+| Architecture | Decoder-only Transformer (nanoGPT style) |
+| Layers / heads / embedding | 4 / 4 / 128 |
+| Context length | 256 tokens |
+| Parameters | about 1.34M |
+| Optimizer | Adam, learning rate 3e-4 |
+| Epochs | 5 |
+| Vocabulary | 2000 for both tokenizers |
+
+Only the tokenizer changes between runs. Architecture, optimizer, data, and seed are identical.
+
+---
 
 ## Data
 
-| Use | Source | Notes |
+| Use | Source | Status |
 |---|---|---|
-| Language model training | L3Cube-HingCorpus (`hinglish-orthobench/HingCorpus`, roman archive) | 50k-sentence seeded sample of a much larger corpus |
-| Language model evaluation | 10% held-out split of the 50k sample | Same split for both tokenizers |
-| Spelling groups | Transliteration dataset, via teammate's grouped file | Source row IDs not yet verified; function words still included |
-| Sentiment (planned) | SemEval-2020 Task 9 Hinglish, via Person C | Labels: 0 = neutral, 1 = positive, 2 = negative. Needs cleaning |
+| Language modeling | L3Cube-HingCorpus (roman), 50k sample, seed 42 | Ready |
+| Held-out evaluation | 10% of the 50k sample | Ready |
+| Spelling groups | Transliteration-based grouping from teammate | Pending verification |
+| Sentiment (planned) | SemEval-2020 Task 9 Hinglish | Pending cleaning and label confirmation |
 
-The original HuggMachas corpus (movie-heavy) was used only for early pipeline tests and is no longer part of the main experiment.
+---
 
-## Known Limitations
+## Limitations
 
-- **Scale:** the model is small (~1.3M parameters) and trained on a 50k-sentence sample, so results may not transfer to larger models.
-- **Phonetic G2P:** eSpeak via Phonemizer, not Epitran (no Latin-script Hindi map) or Festvox (Linux-oriented). Pronunciation rules are imperfect for romanized spelling, so some variants still map to different sounds (e.g. `accha` vs `acha`).
-- **Metric fairness:** the phonetic model predicts sound sequences, not exact text, so its BPC is only approximately comparable to BPE's.
-- **Phonetic vocabulary:** the eSpeak symbol set has 51 base symbols, and the 2000-token phonetic vocab is partly built from rare merges.
-- **Spelling groups:** the teammate's grouping is frequency-based in parts, includes function words and some inflection variants, and its source IDs are unverified. The collision result must be reported with this caveat.
-- **Sentiment data:** source contains abusive and communal language and emoji names. Cleaning rules and the emoji treatment are pending mentor approval.
+- **Small scale.** About 1.3M parameters on a 50k-sentence sample. Results may not hold for larger models.
+- **Imperfect G2P.** eSpeak reads spellings like `accha` differently from `acha`, so some variants never collapse.
+- **Approximate fairness.** The phonetic model predicts sound sequences, so its BPC is only approximately comparable to BPE's.
+- **Rare merges.** The 2000-token phonetic vocabulary is partly built from rare pairs.
+- **Unverified groups.** Spelling groups include function words and inflections, and their source rows are not yet checked.
+- **Sensitive content.** Social-media sentiment data contains abusive and communal language. Handling is pending mentor review.
 
-## Team
+---
 
-- Project lead: pipeline, tokenizers, training, metrics
-- Teammate (Person C): spelling groups, sentiment data preparation
-- Teammate (Person B): sentiment data and paper sections
+## Roadmap
+
+- [x] Phonetic tokenizer on eSpeak G2P
+- [x] Bits-per-character metric and resumable training
+- [x] 50k L3Cube subset
+- [ ] Full training run, both tokenizers
+- [ ] Verified spelling groups
+- [ ] Robustness test on clean vs perturbed sentiment data
+- [ ] Sentiment fine-tuning
+
+---
 
 ## References
 
-- Goriely et al. (2024). *Babble to Words*.
-- *Tokenization Limits Phonological Knowledge* (2026).
-- L3Cube-HingCorpus (L3Cube Pune).
-- Hinglish-Hindi Transliteration Dataset (Hugging Face).
-- SemEval-2020 Task 9: Overview of sentiment analysis of code-mixed tweets.
-- eSpeak NG; Phonemizer.
+1. Goriely et al. (2024). Babble to Words.
+2. Tokenization Limits Phonological Knowledge (2026).
+3. L3Cube-HingCorpus, L3Cube Pune.
+4. Hinglish-Hindi Transliteration Dataset, Hugging Face.
+5. SemEval-2020 Task 9: sentiment analysis of code-mixed tweets.
+6. eSpeak NG and Phonemizer.
 
-## Licence
+---
 
-TBD. Data is subject to the licences of its original sources (L3Cube, transliteration dataset, SemEval-2020 Task 9). Check each before redistributing.
-```
+## License
+
+Code: to be decided. Data is governed by the licences of its original sources (L3Cube, transliteration dataset, SemEval-2020 Task 9). Check each before redistributing.
