@@ -14,11 +14,14 @@ OUT_PATH = Path("results/tables/collision_rate.csv")
 
 
 def read_groups(path):
-    """Each row is one word's spelling variants. Empty cells are skipped."""
+    """Header row, then: hindi, variant_1..variant_n, source. Returns variant lists only."""
     groups = []
     with open(path, encoding="utf-8") as f:
-        for row in csv.reader(f):
-            variants = [v.strip() for v in row if v.strip()]
+        reader = csv.reader(f)
+        header = next(reader)
+        variant_cols = [i for i, h in enumerate(header) if h.startswith("variant_")]
+        for row in reader:
+            variants = [row[i].strip() for i in variant_cols if i < len(row) and row[i].strip()]
             if len(variants) >= 2:
                 groups.append(variants)
     return groups
@@ -39,7 +42,7 @@ def main():
     bpe.train(TRAIN_PATH)
 
     # Wrap both so they expose encode() -> list of ids
-    phon_encode = lambda s: phonetic_bpe.encode(s).ids
+    phon_encode = phonetic_bpe.encode
     bpe_encode = bpe.encode
 
     phon_hits = sum(collides(phon_encode, g) for g in groups)

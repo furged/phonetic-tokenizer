@@ -1,0 +1,3 @@
+Tokenizer,Groups,Colliding groups,Collision rate
+BPE,114,0,0.000
+Phonetic,114,19,0.167
