@@ -13,7 +13,7 @@ class GPTConfig:
     dropout = 0.1
     learning_rate = 3e-4
     batch_size = 32
-    num_epochs = 1
+    num_epochs = 5   
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 

@@ -1,4 +1,4 @@
-"""Training script for nanoGPT with phonetic or BPE tokenizers. Reports bits per character."""
+"""Training script for nanoGPT with phonetic or BPE tokenizers. Reports bits per character. Resumable."""
 
 import sys
 sys.path.insert(0, '.')
@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
 
 from model.nanogpt import GPT, GPTConfig
-from tokenizer.phonetic_g2p import build_phonetic_bpe
+from tokenizer.phonetic_g2p import build_phonetic_bpe, PhoneticBPE, PhoneticTokenizer
 from baselines.bpe_tokenizer import BPETokenizer
 
 SEED = 42
@@ -66,6 +66,22 @@ class HinglishDataset(Dataset):
         return torch.tensor(seq, dtype=torch.long), torch.tensor(target, dtype=torch.long)
 
 
+def save_checkpoint(path, model, optimizer, epoch, extra):
+    torch.save({
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'epoch': epoch,
+        'extra': extra,
+    }, path)
+
+
+def load_checkpoint(path, model, optimizer, device):
+    ckpt = torch.load(path, map_location=device)
+    model.load_state_dict(ckpt['model'])
+    optimizer.load_state_dict(ckpt['optimizer'])
+    return ckpt['epoch']
+
+
 @torch.no_grad()
 def compute_bpc(model, tokenizer, test_path, config):
     """Total test loss in bits, divided by raw characters of the test text.
@@ -105,14 +121,29 @@ def train_model(tokenizer_name):
     device = config.device
     print(f"Device: {device}\n")
 
+    # Tokenizer: build once, save to disk, reload on later runs
+    tok_path = Path(f'results/tokenizer_{tokenizer_name}.json')
     if tokenizer_name == 'phonetic':
-        print("Building phonetic tokenizer...")
-        tokenizer = build_phonetic_bpe(TRAIN_PATH, vocab_size=2000)
+        if tok_path.exists():
+            from tokenizers import Tokenizer
+            tokenizer = PhoneticBPE(Tokenizer.from_file(str(tok_path)), PhoneticTokenizer())
+            print("Loaded saved phonetic tokenizer")
+        else:
+            print("Building phonetic tokenizer...")
+            tokenizer = build_phonetic_bpe(TRAIN_PATH, vocab_size=2000)
+            tokenizer.tok.save(str(tok_path))
         config.vocab_size = tokenizer.get_vocab_size()
     else:
-        print("Building BPE tokenizer...")
-        tokenizer = BPETokenizer(vocab_size=2000)
-        tokenizer.train(TRAIN_PATH)
+        if tok_path.exists():
+            from tokenizers import Tokenizer
+            tokenizer = BPETokenizer(vocab_size=2000)
+            tokenizer.tokenizer = Tokenizer.from_file(str(tok_path))
+            print("Loaded saved BPE tokenizer")
+        else:
+            print("Building BPE tokenizer...")
+            tokenizer = BPETokenizer(vocab_size=2000)
+            tokenizer.train(TRAIN_PATH)
+            tokenizer.tokenizer.save(str(tok_path))
         config.vocab_size = tokenizer.vocab_size()
     print(f"Vocab size: {config.vocab_size}\n")
 
@@ -124,7 +155,14 @@ def train_model(tokenizer_name):
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}\n")
 
-    for epoch in range(config.num_epochs):
+    # Resume from the last completed epoch, if a checkpoint exists
+    ckpt_path = Path(f'results/ckpt_{tokenizer_name}.pt')
+    start_epoch = 0
+    if ckpt_path.exists():
+        start_epoch = load_checkpoint(ckpt_path, model, optimizer, device) + 1
+        print(f"Resuming from epoch {start_epoch}\n")
+
+    for epoch in range(start_epoch, config.num_epochs):
         model.train()
         epoch_loss = 0.0
         for batch_idx, (x, y) in enumerate(dataloader):
@@ -139,6 +177,8 @@ def train_model(tokenizer_name):
                       f"Loss: {epoch_loss/(batch_idx+1):.4f}")
         avg = epoch_loss / max(len(dataloader), 1)
         print(f"\nEpoch {epoch+1} - train loss (nats/token): {avg:.4f}\n")
+        save_checkpoint(ckpt_path, model, optimizer, epoch, {'loss': avg})
+        print(f"Checkpoint saved after epoch {epoch+1}\n")
 
     torch.save(model.state_dict(), f'results/model_{tokenizer_name}_final.pt')
 
@@ -151,18 +191,8 @@ def train_model(tokenizer_name):
 if __name__ == '__main__':
     Path('results/tables').mkdir(parents=True, exist_ok=True)
     make_split(FULL_PATH, TRAIN_PATH, TEST_PATH)
-
-    results = {}
-    for name in ['bpe', 'phonetic']:
-        results[name] = train_model(name)
-
-    print("=" * 60)
-    print("BPC SUMMARY (lower is better)")
-    print("=" * 60)
-    for name, bpc in results.items():
-        print(f"{name.upper()}: {bpc:.4f} bits per character")
-
-    with open('results/tables/bpc.csv', 'w', newline='', encoding='utf-8') as f:
-        f.write('tokenizer,bits_per_char\n')
-        for name, bpc in results.items():
-            f.write(f'{name},{bpc:.4f}\n')
+    names = sys.argv[1:] or ['bpe', 'phonetic']
+    for name in names:
+        bpc = train_model(name)
+        with open('results/tables/bpc.csv', 'a', encoding='utf-8') as f:
+            f.write(f'{name},{bpc:.4f}\n')  

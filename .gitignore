@@ -10,22 +10,27 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
-# Data (large / raw datasets shouldn't live in git)
+# Data (raw and processed are regenerable from scripts)
 data/raw/*
-data/processed/*
 !data/raw/.gitkeep
+data/processed/*
 !data/processed/.gitkeep
 
-# Model checkpoints & results (usually too large for git)
-model/checkpoints/
+# Model checkpoints and trained artifacts (large, regenerable)
 *.pt
 *.pth
 *.ckpt
-results/plots/*.png
-
-# Trained tokenizer artifacts (regenerable from scripts + data, not source)
+results/tokenizer_*.json
+results/ckpt_*.pt
+model/checkpoints/
 baselines/bpe_model/
 tokenizer/phonetic_model/
+
+# Temporary files
+temp_phonemes.txt
+
+# Archives (large dataset downloads)
+*.tar.gz
 
 # OS / editor
 .DS_Store
@@ -39,4 +44,7 @@ Thumbs.db
 # Logs
 *.log
 wandb/
-temp_phonemes.txt
+
+# Results: tables and plots are KEPT (not ignored)
+# results/tables/*.csv  -> committed
+# results/plots/*.png   -> committed if small
