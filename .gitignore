@@ -47,4 +47,5 @@ wandb/
 
 # Results: tables and plots are KEPT (not ignored)
 # results/tables/*.csv  -> committed
-# results/plots/*.png   -> committed if small
+# results/plots/*.png   -> committed if smallresults/logs/
+temp_phonemes.txt
