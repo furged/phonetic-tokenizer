@@ -1,13 +1,3 @@
-I can't produce a finished `.docx` or PDF file here, but I can give you the full updated paper text in the same structure and section order as your draft, ready to paste into your template. I've kept the formatting conventions: numbered Roman-numeral sections, lettered subsections, and IEEE-style citations in square brackets.
-
-Before the text, two things you need to know so the paper matches what was actually done:
-
-- The draft's Section IV says "Expected Evaluation" with no conclusion drawn in advance. The results are now in, so that section becomes Results, and Discussion is added.
-- The draft says phonetic tokenization is "expected" to help. The updated text reports what happened, including the cases where it did not.
-
-Here is the updated paper.
-
----
 
 **Sound Over Spelling: A Comparative Study of Phonetic vs. Subword Tokenization for Hindi/Hinglish Language Modeling**
 
