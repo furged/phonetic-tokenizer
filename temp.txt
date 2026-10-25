@@ -1,0 +1,175 @@
+I can't produce a finished `.docx` or PDF file here, but I can give you the full updated paper text in the same structure and section order as your draft, ready to paste into your template. I've kept the formatting conventions: numbered Roman-numeral sections, lettered subsections, and IEEE-style citations in square brackets.
+
+Before the text, two things you need to know so the paper matches what was actually done:
+
+- The draft's Section IV says "Expected Evaluation" with no conclusion drawn in advance. The results are now in, so that section becomes Results, and Discussion is added.
+- The draft says phonetic tokenization is "expected" to help. The updated text reports what happened, including the cases where it did not.
+
+Here is the updated paper.
+
+---
+
+**Sound Over Spelling: A Comparative Study of Phonetic vs. Subword Tokenization for Hindi/Hinglish Language Modeling**
+
+Anushka Shakya, Anushka Rajput, Anushka Kaushal, Aditi Singh, Aditya Singh
+Department of Computer Science and Engineering (Artificial Intelligence), KIET Group of Institutions, India
+
+**Abstract**
+
+Spelling variation is a persistent feature of romanized Hindi-English code-mixed text (Hinglish), where the same word may appear in several written forms without a standard orthography. Subword tokenization such as Byte Pair Encoding (BPE) operates on these spellings and can encode surface variation as distinct token sequences. This study compares a BPE tokenizer with a phonetic tokenizer that converts text to IPA phonemes before subword merging. Both are used to train an identical small GPT-style model on a 50,000-sentence sample of L3Cube-HingCorpus, under the same seed and training settings. We compare the two at the tokenizer level (vocabulary, tokens per sentence, and spelling-variant collisions over 114 spelling groups) and at the model level (bits per character on a held-out split). The phonetic tokenizer produced slightly shorter sequences (31.24 vs. 37.31 tokens per sentence) and collapsed spelling variants in 19 of 114 groups, where BPE collapsed none. Its test bits per character was 2.2771, compared with 2.3894 for BPE. These differences are small, the phonetic model scores sound sequences rather than exact text, and the spelling groups include function words and inflections. The results support the mechanism but do not establish robustness on their own. A sentiment and spelling-perturbation evaluation is planned but not yet completed.
+
+**Index Terms**: Hinglish, Hindi-English code-mixing, phonetic tokenization, BPE, spelling variation, language modeling, bits per character
+
+**I. INTRODUCTION**
+
+Tokenization determines how text is represented before a language model processes it. Most current models use orthography-based subword schemes such as BPE [4], which build a vocabulary from frequently recurring character sequences. These schemes work well for standardized written languages, but they can be sensitive to spelling variation. The problem is especially visible in Hinglish, where Hindi is written in the Roman alphabet and no fixed transliteration standard exists, so one word may be spelled several ways [5].
+
+Phonetic tokenization offers an alternative. Text is first mapped from graphemes to pronunciation units, and the resulting sequence is then tokenized. The intuition is that spelling variants of one word often share a pronunciation, so a sound-based representation may map them to similar sequences. Prior work supports both the feasibility of phoneme-based language modeling [1] and the claim that conventional tokenization can obscure phonological structure [2]. Work on multilingual IPA tokenization also reports gains in tokenization quality across scripts [3]. None of these studies directly examines spelling variation within a single romanized code-mixed language.
+
+The research question is: does phonetic tokenization make language models more robust to spelling variation than standard subword tokenization when both are trained at the same scale? We address this in two parts. First, we compare the tokenizers directly, without training, on compactness and on whether spelling variants collapse to identical tokens. Second, we train identical language models on each representation and compare held-out bits per character. This separation lets tokenizer-level effects be measured apart from model-level effects.
+
+**II. RELATED WORK**
+
+**A. Phoneme-Based Language Modeling**
+
+Goriely et al. [1] train a GPT-2-style model on continuous streams of phonemes, using the BabyLM pre-training corpus. Their results show a small loss on orthography-based benchmarks, alongside gains on sound-based tasks, and they highlight utterance-boundary markers as an important design choice. Their experiments use clean, standardized English. Our study applies the phonetic idea to Hindi/Hinglish, where orthographic conventions are inconsistent.
+
+**B. Tokenization and Phonological Information**
+
+Liao and Shi [2] show that BPE-style tokenization can weaken representations of rhyme and syllabification in text-only models. They introduce a distance measure between learned token boundaries and syllable boundaries, and show that light fine-tuning on IPA-based input recovers part of the lost structure. This motivates testing whether phonetic input helps with orthographic inconsistency, a different problem from the one they study.
+
+**C. Phonetic Representations Across Languages**
+
+Miletić et al. [3] tokenize IPA representations rather than raw orthography across 24 languages and 14 scripts. They report better tokenization quality and better generalization to unseen scripts, with the largest benefits for non-Latin scripts. Their setting is multilingual, while ours is one code-mixed language pair.
+
+**D. Positioning**
+
+Prior studies show that phoneme-based modeling is viable, that subword tokenization can obscure phonological structure, and that IPA representations help across languages. None of them examines naturally occurring spelling variation in one romanized code-mixed community. This study addresses that gap.
+
+**III. METHODOLOGY**
+
+**A. Experimental Design**
+
+We compare a BPE tokenizer with a phonetic tokenizer under matched conditions. Both tokenizers have a vocabulary of 2000. The model architecture, optimizer, data split, and random seed are the same for both runs, so that only the input representation differs. The tokenizer-level analysis measures vocabulary size, tokens per sentence, and spelling-variant collisions. The model-level analysis measures held-out bits per character.
+
+**B. Datasets**
+
+*Training corpus.* We use L3Cube-HingCorpus (roman-script archive) [6]. The archive contains about 52.9 million non-empty lines. We draw a 50,000-sentence sample by reservoir sampling with seed 42. The sample is split 90% train and 10% test, also with seed 42. Both tokenizers and both models use the same split.
+
+*Spelling groups.* The spelling-variant analysis uses groups of Hindi words and their Latin-script spellings, drawn from a Hinglish-Hindi transliteration dataset [7]. The file contains 114 groups. Groups are built by frequency and matching; some groups contain function words (for example, "har", "kuch") and some contain inflected forms of one verb. Source row identifiers were supplied by a teammate and were not independently verified against the source dataset.
+
+*Sentiment data.* A labeled Hinglish sentiment corpus is planned as the downstream task [8]. This evaluation has not been completed and is not reported here.
+
+*Preliminary data.* An earlier pipeline run used a movie-domain Hinglish corpus [9] on 1,000 sentences. These runs were used only for debugging and are superseded by the results below.
+
+**C. Tokenization Pipeline**
+
+The BPE baseline is a byte-level BPE tokenizer trained on the 50,000-sentence training split with a target vocabulary of 2000 [4]. The phonetic tokenizer converts each word to IPA phonemes using eSpeak NG through the Phonemizer library with the Hindi language setting [10][11]. Phoneme strings are joined with spaces and passed to a BPE tokenizer trained with a target vocabulary of 2000. The phonetic base alphabet has 60 symbols on the 50k sample. Because the phonetic tokenizer starts from fewer base symbols, its 2000 tokens include more merged units than BPE's.
+
+We also evaluated eSpeak directly on the spelling groups. For each group, the most frequent IPA output is taken as the reference, and a variant agrees if its IPA matches it. Across the groups, agreement is partial: eSpeak reads several variants differently (for example, "accha" yields /ɐkha/, while "acha" yields /ɐtʃa/). We report this as a limitation of the G2P step rather than correcting it.
+
+We also tried Epitran [12] as an alternative. Its Hindi support is for Devanagari script, and no Latin-script Hindi mapping was available, so it could not process romanized input directly. Festvox Indic [13] was considered but is oriented toward Linux environments and was not used.
+
+**D. Model**
+
+Both models use a decoder-only Transformer in the nanoGPT style [14]: 4 layers, 4 attention heads, embedding size 128, context length 256, about 1.34 million parameters. Training uses Adam with learning rate 3×10⁻⁴, batch size 32, and 5 epochs. Only the tokenizer and its vocabulary differ between runs.
+
+**D. Metrics**
+
+*Bits per character (BPC).* Test loss is summed over all predicted tokens on the held-out split, converted from nats to bits by dividing by ln 2, and divided by the number of raw characters in the held-out text. Both models are scored on the same characters. Perplexity is not used for comparison because it is measured per token, and the two tokenizers produce different token counts for the same text.
+
+*Collision rate.* A spelling group collides if all of its variants produce identical token sequences. The collision rate is the number of colliding groups divided by the total number of groups.
+
+*Tokens per sentence.* The mean number of tokens produced per sentence over the 50,000-sentence sample.
+
+**IV. RESULTS**
+
+**A. Tokenizer-Level Results**
+
+Table I reports vocabulary size and average tokens per sentence on the 50,000-sentence sample. BPE produces 37.31 tokens per sentence and the phonetic tokenizer produces 31.24, a ratio of 0.84. Before BPE merging, the phonetic base sequence averages 92.49 tokens per sentence over 60 symbols; this unmerged form is not the representation used for training.
+
+TABLE I. TOKENIZER STATISTICS (50,000 SENTENCES)
+
+| Tokenizer | Vocab size | Avg. tokens/sentence |
+|---|---|---|
+| Phonetic (base, unmerged) | 60 | 92.49 |
+| Phonetic-BPE | 2000 | 31.24 |
+| BPE | 2000 | 37.31 |
+
+Table II reports collision results over 114 spelling groups. BPE produced no colliding groups. The phonetic tokenizer produced identical sequences for all variants in 19 groups.
+
+TABLE II. SPELLING-VARIANT COLLISIONS (114 GROUPS)
+
+| Tokenizer | Colliding groups | Collision rate |
+|---|---|---|
+| BPE | 0 / 114 | 0.000 |
+| Phonetic-BPE | 19 / 114 | 0.167 |
+
+**B. Model-Level Results**
+
+Both models were trained for 5 epochs on the same 45,000-sentence training split with the same seed. Table III reports test bits per character on the same 5,000-sentence held-out split.
+
+TABLE III. TEST BITS PER CHARACTER (LOWER IS BETTER)
+
+| Tokenizer | Bits per character |
+|---|---|
+| BPE | 2.3894 |
+| Phonetic-BPE | 2.2771 |
+
+Epoch-level training loss was recorded for both runs. Training loss decreased across epochs for both models. The per-batch training log was not saved on the first run, so the loss curves are drawn from recorded epoch-end values only.
+
+Figure 1 shows the collision grid, with each spelling group as a row and colour indicating the number of distinct token sequences its spellings produce.
+
+**V. DISCUSSION**
+
+The tokenizer results give a mixed picture. Phonetic-BPE produces slightly shorter sequences than BPE, which is the opposite of the earlier 1,000-sentence run; that run predated a bug fix and is superseded. The model-level gap is also small: phonetic scores 0.11 bits per character lower. Because the phonetic model predicts sound sequences rather than exact characters, this comparison is approximate.
+
+The collision result supports the mechanism. Phonetic tokenization made some spelling variants identical, which BPE never did. The effect is uneven, though. Several groups that should collapse did not, because eSpeak assigns different pronunciations to some spellings (for example, "accha" versus "acha"). The result therefore reflects both the idea and the quality of the G2P step.
+
+The study does not yet show that phonetic tokenization is more robust to spelling noise in a downstream task. The robustness claim requires the sentiment evaluation under clean and perturbed inputs, which is not complete.
+
+**VI. LIMITATIONS**
+
+The model is small (about 1.3M parameters) and trained on a 50,000-sentence sample, so results may not transfer to larger settings. The BPC comparison is approximate because the two models predict different units. eSpeak's pronunciation rules are imperfect for romanized spelling. The spelling groups include function words and inflections and their source rows were not independently verified. Per-batch and per-epoch logs were not saved on the first training run, so the loss curves rely on recorded epoch values. Finally, the sentiment and perturbed-input evaluations were not completed.
+
+**VII. CONCLUSION**
+
+We compared BPE and a phonetic tokenizer for Hinglish under matched small-model training. The phonetic tokenizer gave slightly shorter sequences, slightly lower test bits per character, and collapsed spelling variants in 19 of 114 groups where BPE collapsed none. These results are consistent with the hypothesis, but the differences are small and the robustness evaluation remains to be completed. We consider the findings promising rather than conclusive.
+
+**REFERENCES**
+
+[1] Z. Goriely, R. Diehl Martinez, A. Caines, P. Buttery, and L. Beinborn, "From Babble to Words: Pre-Training Language Models on Continuous Streams of Phonemes," in *Proc. 2nd BabyLM Challenge at CoNLL 2024*, pp. 37–53, 2024.
+
+[2] D. Liao and F. Shi, "How Tokenization Limits Phonological Knowledge Representation in Language Models and How to Improve Them," in *Proc. 64th Annual Meeting of the ACL (Volume 1: Long Papers)*, pp. 13921–13938, 2026.
+
+[3] M. Miletić, J. Kalinić, and E. Shutova, "Phonemes to the Rescue: Multilingual Tokenization Based on International Phonetic Alphabet," in *Proc. 64th Annual Meeting of the ACL (Volume 1: Long Papers)*, pp. 40323–40349, 2026.
+
+[4] R. Sennrich, B. Haddow, and A. Birch, "Neural Machine Translation of Rare Words with Subword Units," in *Proc. 54th Annual Meeting of the ACL*, pp. 1715–1725, 2016.
+
+[5] Hugging Face, "Hinglish-Hindi Transliteration Dataset," Hugging Face Datasets. [Online]. Available: https://huggingface.co/datasets
+
+[6] L3Cube Pune, "L3Cube-HingCorpus," Hugging Face Datasets, mirror `hinglish-orthobench/HingCorpus` (roman archive). [Online]. Available: https://huggingface.co/datasets/hinglish-orthobench/HingCorpus
+
+[7] Hinglish-Hindi Transliteration Dataset (Hugging Face), used to construct the 114 spelling groups in `spelling_variants.csv`. Groups compiled by project team; source rows not independently verified.
+
+[8] SemEval-2020 Task 9: Overview of Sentiment Analysis of Code-Mixed Tweets, in *Proc. 14th International Workshop on Semantic Evaluation*, 2020.
+
+[9] HuggMachas, "en-hi-codemixed-corpus," Hugging Face Datasets. [Online]. Available: https://huggingface.co/datasets/HuggMachas/en-hi-codemixed-corpus
+
+[10] espeak-ng, "eSpeak NG Text-to-Speech," GitHub. [Online]. Available: https://github.com/espeak-ng/espeak-ng
+
+[11] M. Bernard, "Phonemizer: Text to Phonemes Converter," GitHub. [Online]. Available: https://github.com/bootphon/phonemizer
+
+[12] D. R. Mortensen, S. Dalmia, and P. Littell, "Epitran: Precision G2P for Many Languages," in *Proc. LREC 2018*, 2018.
+
+[13] A. Baby, A. L. Thomas, N. L. N. T., and T. A. Consortium, "Resources for Indian Languages," in *Proc. CALPHAD/Festvox Indic Frontend*, 2016.
+
+[14] A. Karpathy, "nanoGPT," GitHub. [Online]. Available: https://github.com/karpathy/nanoGPT
+
+---
+
+**Notes before you submit:**
+- Reference [4] (Sennrich et al.) and [7] to [9] were not in your original list. I added [4] because BPE is cited in the text. Confirm and check the details yourself, since I can't verify them here.
+- Reference [13] (Festvox) author list is uncertain. Check the original paper before submitting.
+- Reference [9] (HuggMachas) is cited only as preliminary. Remove it if your template doesn't allow citing debugging data.
+- The "Index Terms" and section headings follow your original template. Adjust the font and layout in your document class.
