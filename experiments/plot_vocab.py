@@ -14,7 +14,7 @@ with open("data/processed/train.txt", encoding="utf-8") as f:
     for line in f:
         chars.update(line.strip())
 base_bpe = len(chars)
-base_phon = 51  # IPA symbols from the eSpeak run
+base_phon = 60  # IPA symbols from the eSpeak run
 
 labels = ["BPE", "Phonetic-BPE"]
 base = [base_bpe, base_phon]
