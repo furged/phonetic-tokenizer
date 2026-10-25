@@ -158,8 +158,3 @@ We compared BPE and a phonetic tokenizer for Hinglish under matched small-model 
 
 ---
 
-**Notes before you submit:**
-- Reference [4] (Sennrich et al.) and [7] to [9] were not in your original list. I added [4] because BPE is cited in the text. Confirm and check the details yourself, since I can't verify them here.
-- Reference [13] (Festvox) author list is uncertain. Check the original paper before submitting.
-- Reference [9] (HuggMachas) is cited only as preliminary. Remove it if your template doesn't allow citing debugging data.
-- The "Index Terms" and section headings follow your original template. Adjust the font and layout in your document class.
