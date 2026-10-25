@@ -1,18 +1,18 @@
-"""Per-group collision grid: each spelling group's token sequences under BPE and phonetic."""
+"""Graded per-group grid: number of distinct token sequences per spelling group."""
 import sys
 from pathlib import Path
+import random
 
 sys.path.insert(0, '.')
 
-import csv
+import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
 
 from tokenizer.phonetic_g2p import build_phonetic_bpe
 from baselines.bpe_tokenizer import BPETokenizer
-from experiments.collision_rate import read_groups, collides
+from experiments.collision_rate import read_groups
 
 GROUPS_PATH = Path("data/raw/spelling_variants.csv")
 TRAIN_PATH = "data/processed/train.txt"
@@ -25,41 +25,34 @@ phon = build_phonetic_bpe(TRAIN_PATH, vocab_size=2000)
 bpe = BPETokenizer(vocab_size=2000)
 bpe.train(TRAIN_PATH)
 
-phon_enc = phon.encode
-bpe_enc = bpe.encode
+def distinct(encode, variants):
+    return len({tuple(encode(v)) for v in variants})
 
-# Colliding = all variants identical; highlight the rows
 rows = []
 for g in groups:
-    rows.append((g, collides(bpe_enc, g), collides(phon_enc, g)))
+    rows.append((g, distinct(bpe.encode, g), distinct(phon.encode, g)))
 
-# Sort: phonetic-colliding groups first, then the rest
-rows.sort(key=lambda r: (not r[2], not r[1]))
+random.Random(42).shuffle(rows)
 
-fig_h = max(4, 0.22 * len(rows) + 1.5)
-fig, ax = plt.subplots(figsize=(10, fig_h))
+grid = np.array([[r[1], r[2]] for r in rows], dtype=float)
+labels = [" | ".join(r[0][:3]) + (" ..." if len(r[0]) > 3 else "") for r in rows]
 
-grid = []
-colors = []
-labels = []
-for g, b_hit, p_hit in rows:
-    labels.append(" | ".join(g[:3]) + (" ..." if len(g) > 3 else ""))
-    grid.append([int(b_hit), int(p_hit)])
-
-import numpy as np
-arr = np.array(grid)
-cmap = matplotlib.colors.ListedColormap(["#E6E6E6", "#2E8B57"])
-ax.imshow(arr, aspect="auto", cmap=cmap, vmin=0, vmax=1)
+fig_h = max(5, 0.2 * len(rows) + 1.5)
+fig, ax = plt.subplots(figsize=(7, fig_h))
+im = ax.imshow(grid, aspect="auto", cmap="viridis_r", vmin=1, vmax=max(2, grid.max()))
 
 ax.set_xticks([0, 1])
 ax.set_xticklabels(["BPE", "Phonetic"])
 ax.set_yticks(range(len(rows)))
-ax.set_yticklabels(labels, fontsize=7)
-ax.set_title("Per-group collisions: green = all spellings give identical tokens")
-ax.legend(handles=[Patch(color="#2E8B57", label="collides"),
-                   Patch(color="#E6E6E6", label="does not collide")],
-          loc="upper left", bbox_to_anchor=(1.01, 1), fontsize=8)
+ax.set_yticklabels(labels, fontsize=6)
+for i in range(grid.shape[0]):
+    for j in range(grid.shape[1]):
+        ax.text(j, i, int(grid[i, j]), ha="center", va="center", fontsize=6,
+                color="white" if grid[i, j] > 1 else "black")
 
+cbar = fig.colorbar(im, ax=ax, fraction=0.04, pad=0.04)
+cbar.set_label("distinct token sequences (1 = all spellings identical)")
+ax.set_title("Per-group spread: fewer distinct sequences = more collapse")
 fig.tight_layout()
 fig.savefig(OUT / "collision_grid.png", dpi=150)
 print(f"Saved {OUT / 'collision_grid.png'} ({len(rows)} groups)")
