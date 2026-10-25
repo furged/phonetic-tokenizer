@@ -1,4 +1,4 @@
 Tokenizer,Vocab Size,Avg Tokens/Sentence,Total Tokens,Sentences
-Phonetic (basic),51,107.55,107545,1000
-Phonetic-BPE (2000),2000,29.20,29200,1000
-BPE (2000),2000,33.97,33965,1000
+Phonetic (basic),60,92.49,4624532,50000
+Phonetic-BPE (2000),2000,31.24,1562081,50000
+BPE (2000),2000,37.31,1865528,50000
