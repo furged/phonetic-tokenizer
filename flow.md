@@ -1,3 +1,5 @@
+```mermaid
+
 flowchart TD
     A["L3Cube-HingCorpus archive<br/>(2.49 GB, roman)"] --> B["data/prepare_subset.py<br/>reservoir sample 50k, seed 42"]
     B --> C["data/processed/train.txt<br/>50,000 lines"]
@@ -26,3 +28,4 @@ flowchart TD
     Q --> W
     T --> W
     W --> X["results/plots/*.png"]
+```
