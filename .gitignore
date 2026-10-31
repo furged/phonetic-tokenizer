@@ -49,3 +49,4 @@ wandb/
 # results/tables/*.csv  -> committed
 # results/plots/*.png   -> committed if smallresults/logs/
 temp_phonemes.txt
+.venv312/
