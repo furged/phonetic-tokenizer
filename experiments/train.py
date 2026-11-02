@@ -1,10 +1,16 @@
-"""Training script for nanoGPT with phonetic or BPE tokenizers. Reports bits per character. Resumable."""
+"""Training script for nanoGPT with phonetic or BPE tokenizers.
+Reports bits per character. Resumable (epoch and mid-epoch checkpoints).
+Usage:  RUN_TAG=100k python experiments/train.py bpe
+        RUN_TAG=100k python experiments/train.py phonetic
+"""
 
 import sys
 sys.path.insert(0, '.')
 
+import os
 import math
 import random
+import logging
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -13,13 +19,28 @@ from pathlib import Path
 from model.nanogpt import GPT, GPTConfig
 from tokenizer.phonetic_g2p import build_phonetic_bpe, PhoneticBPE, PhoneticTokenizer
 from baselines.bpe_tokenizer import BPETokenizer
+from tokenizers import Tokenizer
 
 SEED = 42
 TEST_FRAC = 0.1
-FULL_PATH = 'data/processed/train.txt'
-TRAIN_PATH = 'data/processed/split_train.txt'
-TEST_PATH = 'data/processed/split_test.txt'
+RUN_TAG = os.environ.get("RUN_TAG", "50k")
+FULL_PATH = 'data/processed/train.txt' if RUN_TAG == "50k" else f'data/processed/train_{RUN_TAG}.txt'
+TRAIN_PATH = f'data/processed/split_train_{RUN_TAG}.txt'
+TEST_PATH = f'data/processed/split_test_{RUN_TAG}.txt'
 MAX_SAMPLES = None  # set to 100 only for quick tests
+MID_CKPT_EVERY = 2000  # batches
+
+Path('results/logs').mkdir(parents=True, exist_ok=True)
+Path('results/tables').mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    handlers=[
+        logging.FileHandler(f'results/logs/train_{RUN_TAG}.log', encoding='utf-8'),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger('train')
 
 
 def make_split(corpus_path, train_path, test_path, test_frac=TEST_FRAC, seed=SEED):
@@ -34,7 +55,7 @@ def make_split(corpus_path, train_path, test_path, test_frac=TEST_FRAC, seed=SEE
         f.write('\n'.join(s for i, s in enumerate(sentences) if i not in test_idx) + '\n')
     with open(test_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(s for i, s in enumerate(sentences) if i in test_idx) + '\n')
-    print(f"Split: {len(sentences) - n_test} train, {n_test} test (seed={seed})")
+    log.info(f"Split: {len(sentences) - n_test} train, {n_test} test (seed={seed}, tag={RUN_TAG})")
 
 
 def encode_ids(tokenizer, sent):
@@ -116,51 +137,47 @@ def compute_bpc(model, tokenizer, test_path, config):
 
 
 def train_model(tokenizer_name):
-    print(f"\n{'=' * 60}\nTraining with {tokenizer_name.upper()} tokenizer\n{'=' * 60}\n")
+    log.info(f"Training {tokenizer_name.upper()} tokenizer ({RUN_TAG})")
     config = GPTConfig()
     device = config.device
-    print(f"Device: {device}\n")
+    log.info(f"Device: {device}")
 
-    # Tokenizer: build once, save to disk, reload on later runs
-    tok_path = Path(f'results/tokenizer_{tokenizer_name}.json')
+    tok_path = Path(f'results/tokenizer_{tokenizer_name}_{RUN_TAG}.json')
     if tokenizer_name == 'phonetic':
         if tok_path.exists():
-            from tokenizers import Tokenizer
             tokenizer = PhoneticBPE(Tokenizer.from_file(str(tok_path)), PhoneticTokenizer())
-            print("Loaded saved phonetic tokenizer")
+            log.info("Loaded saved phonetic tokenizer")
         else:
-            print("Building phonetic tokenizer...")
+            log.info("Building phonetic tokenizer...")
             tokenizer = build_phonetic_bpe(TRAIN_PATH, vocab_size=2000)
             tokenizer.tok.save(str(tok_path))
         config.vocab_size = tokenizer.get_vocab_size()
     else:
         if tok_path.exists():
-            from tokenizers import Tokenizer
             tokenizer = BPETokenizer(vocab_size=2000)
             tokenizer.tokenizer = Tokenizer.from_file(str(tok_path))
-            print("Loaded saved BPE tokenizer")
+            log.info("Loaded saved BPE tokenizer")
         else:
-            print("Building BPE tokenizer...")
+            log.info("Building BPE tokenizer...")
             tokenizer = BPETokenizer(vocab_size=2000)
             tokenizer.train(TRAIN_PATH)
             tokenizer.tokenizer.save(str(tok_path))
         config.vocab_size = tokenizer.vocab_size()
-    print(f"Vocab size: {config.vocab_size}\n")
+    log.info(f"Vocab size: {config.vocab_size}")
 
     dataset = HinglishDataset(TRAIN_PATH, tokenizer, config.max_seq_length, MAX_SAMPLES)
     dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
-    print(f"Train sequences: {len(dataset)}\n")
+    log.info(f"Train sequences: {len(dataset)}")
 
     model = GPT(config).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-    print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}\n")
+    log.info(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # Resume from the last completed epoch, if a checkpoint exists
-    ckpt_path = Path(f'results/ckpt_{tokenizer_name}.pt')
+    ckpt_path = Path(f'results/ckpt_{tokenizer_name}_{RUN_TAG}.pt')
     start_epoch = 0
     if ckpt_path.exists():
         start_epoch = load_checkpoint(ckpt_path, model, optimizer, device) + 1
-        print(f"Resuming from epoch {start_epoch}\n")
+        log.info(f"Resuming from epoch {start_epoch + 1}")
 
     for epoch in range(start_epoch, config.num_epochs):
         model.train()
@@ -173,26 +190,34 @@ def train_model(tokenizer_name):
             optimizer.step()
             epoch_loss += loss.item()
             if (batch_idx + 1) % 10 == 0:
-                print(f"Epoch {epoch+1}/{config.num_epochs}, Batch {batch_idx+1}/{len(dataloader)}, "
-                      f"Loss: {epoch_loss/(batch_idx+1):.4f}")
+                log.info(f"Epoch {epoch+1}/{config.num_epochs}, Batch {batch_idx+1}/{len(dataloader)}, "
+                         f"Loss: {epoch_loss/(batch_idx+1):.4f}")
+            if (batch_idx + 1) % MID_CKPT_EVERY == 0:
+                save_checkpoint(ckpt_path, model, optimizer, epoch - 1, {'mid_batch': batch_idx + 1})
         avg = epoch_loss / max(len(dataloader), 1)
-        print(f"\nEpoch {epoch+1} - train loss (nats/token): {avg:.4f}\n")
+        log.info(f"Epoch {epoch+1} - train loss (nats/token): {avg:.4f}")
         save_checkpoint(ckpt_path, model, optimizer, epoch, {'loss': avg})
-        print(f"Checkpoint saved after epoch {epoch+1}\n")
+        log.info(f"Checkpoint saved after epoch {epoch+1}")
 
-    torch.save(model.state_dict(), f'results/model_{tokenizer_name}_final.pt')
+    final_path = f'results/model_{tokenizer_name}_{RUN_TAG}_final.pt'
+    torch.save(model.state_dict(), final_path)
 
     bpc, n_scored, total_chars = compute_bpc(model, tokenizer, TEST_PATH, config)
-    print(f"Test: {n_scored} tokens scored over {total_chars} characters")
-    print(f"BITS PER CHARACTER ({tokenizer_name}): {bpc:.4f}\n")
+    log.info(f"Test: {n_scored} tokens scored over {total_chars} characters")
+    log.info(f"BITS PER CHARACTER ({tokenizer_name}, {RUN_TAG}): {bpc:.4f}")
     return bpc
 
 
 if __name__ == '__main__':
-    Path('results/tables').mkdir(parents=True, exist_ok=True)
-    make_split(FULL_PATH, TRAIN_PATH, TEST_PATH)
-    names = sys.argv[1:] or ['bpe', 'phonetic']
-    for name in names:
-        bpc = train_model(name)
-        with open('results/tables/bpc.csv', 'a', encoding='utf-8') as f:
-            f.write(f'{name},{bpc:.4f}\n')  
+    try:
+        make_split(FULL_PATH, TRAIN_PATH, TEST_PATH)
+        names = sys.argv[1:] or ['bpe', 'phonetic']
+        for name in names:
+            log.info(f"Starting {name} ({RUN_TAG})")
+            bpc = train_model(name)
+            log.info(f"Finished {name}: BPC {bpc:.4f}")
+            with open(f'results/tables/bpc_{RUN_TAG}.csv', 'a', encoding='utf-8') as f:
+                f.write(f'{name},{bpc:.4f}\n')
+    except Exception:
+        log.exception("Training crashed")
+        raise
